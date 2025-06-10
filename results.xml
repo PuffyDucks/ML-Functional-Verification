@@ -1,6 +1,0 @@
-<testsuites name="results">
-  <testsuite name="all" package="all">
-    <property name="random_seed" value="1749596194" />
-    <testcase name="run_batch" classname="test_comparator" file="/home/luna/src/EEC179/test_comparator.py" lineno="17" time="0.0316624641418457" sim_time_ns="400.001" ratio_time="12633.287106398999" />
-  </testsuite>
-</testsuites>

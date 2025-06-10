@@ -1,4 +1,6 @@
-__pycache__/*
-sim_build/*
-xsim.dir/*
+*/__pycache__/*
+*/sim_build/*
+*/xsim.dir/*
 *.pb
+*.xml
+*.csv
