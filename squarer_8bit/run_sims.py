@@ -7,31 +7,24 @@ import json
 
 # ───────────────────────────────────────────────────────────────
 def ensure_csv(csv_path):
-    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-    with open(csv_path, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["a", "b", "gt", "lt", "eq", "pass"])
-
+    if not os.path.exists(csv_path):
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["a", "result"])  # <<< FEATURES AND TARGET HEADERS
+            
 async def run_simulation_batch(dut, csv_path, input_batch):
     with open(csv_path, 'a', newline='') as f:
         writer = csv.writer(f)
 
-        for a_val, b_val in input_batch:
+        for a_val in input_batch: # \/ \/ \/ SIMULATION INPUTS AND OUTPUTS \/ \/ \/
             dut.a.value = a_val
-            dut.b.value = b_val
 
             await Timer(1, units='ns')
 
-            gt = int(dut.gt.value)
-            lt = int(dut.lt.value)
-            eq = int(dut.eq.value)
+            result = int(dut.result.value)
 
-            expected_gt = int(a_val > b_val)
-            expected_lt = int(a_val < b_val)
-            expected_eq = int(a_val == b_val)
-            passed = int(gt == expected_gt and lt == expected_lt and eq == expected_eq)
-
-            writer.writerow([a_val, b_val, gt, lt, eq, passed])
+            writer.writerow([a_val, result])
 
 # ───────────────────────────────────────────────────────────────
 @cocotb.test()
@@ -41,15 +34,17 @@ async def simulate_random(dut):
     '''
     csv_path = os.getenv("CSV_PATH", "verification_data/sim_data.csv")
     ensure_csv(csv_path)
-    
-    num_runs = int(os.getenv("INIT_RUNS", "1"))
+
+    num_runs = int(os.getenv("RUNS", "1"))
+    base_seed = int(os.getenv("SEED_OFFSET", "0"))  # new: deterministic shift
+
     input_batch = []
 
-    for seed in range(num_runs):
+    for i in range(num_runs):
+        seed = base_seed + i
         random.seed(seed)
-        a = random.randint(0, 31)
-        b = random.randint(0, 31)
-        input_batch.append([a, b])
+        a = random.randint(0, 255)
+        input_batch.append(a)
 
     await run_simulation_batch(dut, csv_path, input_batch)
 
