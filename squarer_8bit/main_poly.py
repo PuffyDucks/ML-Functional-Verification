@@ -130,6 +130,9 @@ def clean_sim_data(csv_path, coverage_goals):
     print(f"🧹 Cleaned sim_data.csv: {len(df)} rows remain")
 
 def run_cocotb_test(testcase, extra_env=None):
+    if not hasattr(run_cocotb_test, "_has_built"):
+        run_cocotb_test._has_built = False  # static var
+
     env = os.environ.copy()
     env.update({
         "TESTCASE": testcase,
@@ -138,11 +141,21 @@ def run_cocotb_test(testcase, extra_env=None):
         "TOPLEVEL": top_module,
         "MODULE": test_module,
         "SIM": sim_tool,
-        "EXTRA_ARGS": extra_args
+        "EXTRA_ARGS": extra_args,
+        "PYTHONPATH": os.getcwd(),
     })
     if extra_env:
         env.update(extra_env)
-    subprocess.run(["make"], env=env)
+
+    sim_binary = os.path.join("sim_build", f"Vtop")
+
+    if not run_cocotb_test._has_built or not os.path.exists(sim_binary):
+        print("🛠️  Running make (first time or binary missing)...")
+        subprocess.run(["make"], env=env, check=True)
+        run_cocotb_test._has_built = True
+    else:
+        print("⚡ Reusing simulator binary...")
+        subprocess.run([sim_binary], env=env, check=True)
 
 # ──────────────────────────────────────────────
 #              Verification Loop
@@ -272,3 +285,15 @@ plt.title("Model Loss (MSE) vs Simulations")
 plt.grid(True)
 plt.tight_layout()
 plt.show()
+
+# ──────────────────────────────────────────────
+#         Save metrics for future reference
+# ──────────────────────────────────────────────
+print("📊 All metrics saved to verification_data/poly_metrics.npz")
+np.savez("verification_data/poly_metrics.npz",
+         sim_counts=np.array(sim_counts),
+         coverage=np.array(coverage_progress),
+         mse=np.array(mse_progress),
+         predicted_a=predicted_a,
+         true_results=true_results,
+         expected_results=expected_results)

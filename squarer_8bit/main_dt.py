@@ -4,17 +4,16 @@ import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.neural_network import MLPRegressor
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from joblib import dump, load
-from itertools import product
 
 # ──────────────────────────────────────────────
 #            Configurable Parameters
 # ──────────────────────────────────────────────
 csv_path = "verification_data/sim_data.csv"
-model_path = "verification_data/ann_model.joblib"
+model_path = "verification_data/dt_model.joblib"
 verilog_paths = ["squarer.v"]
 
 top_module = "squarer"
@@ -44,7 +43,7 @@ test_model = "simulate_from_model"
 def normalize_result(x):
     return np.log10(x + 1) / np.log10(MAX_RESULT + 1)
 
-def train_ann(df, coverage_goals):
+def train_dt(df, coverage_goals):
     if df.empty:
         raise ValueError("Empty training data.")
 
@@ -59,7 +58,7 @@ def train_ann(df, coverage_goals):
             })
 
     if len(rows) < 5:
-        raise ValueError(f"Insufficient data to train on after filtering for coverage goals (found {len(rows)} rows, need at least 5).")
+        raise ValueError(f"Insufficient data to train DT model (found {len(rows)} rows).")
 
     df_train = pd.DataFrame(rows)
 
@@ -68,47 +67,35 @@ def train_ann(df, coverage_goals):
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    hidden_layer_opts = [(64, 64), (128, 64), (64, 64, 32)]
-    activations = ["relu", "tanh"]
-    learning_rates = [0.001, 0.005, 0.01]
-
     best_model = None
     best_mse = float("inf")
-    best_config = None
+    best_depth = None
 
-    print("\n🔍 Tuning ANN hyperparameters...")
+    print("\n🔍 Tuning Decision Tree depth...")
 
-    for layers, act, lr in product(hidden_layer_opts, activations, learning_rates):
+    for depth in range(2, 15):
         try:
-            model = MLPRegressor(
-                hidden_layer_sizes=layers,
-                activation=act,
-                learning_rate_init=lr,
-                max_iter=2000,
-                random_state=42
-            )
+            model = DecisionTreeRegressor(max_depth=depth, random_state=42)
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
             mse = mean_squared_error(y_test, y_pred)
 
-            print(f"  ✔️ Config: {layers}, act={act}, lr={lr} → MSE={mse:.6f}")
+            print(f"  ✔️ Depth {depth} → MSE = {mse:.6f}")
 
             if mse < best_mse:
                 best_mse = mse
                 best_model = model
-                best_config = (layers, act, lr)
+                best_depth = depth
         except Exception as e:
-            print(f"  ❌ Failed config {layers}, {act}, {lr}: {e}")
+            print(f"  ❌ Depth {depth} failed: {e}")
 
     if best_model is None:
-        raise RuntimeError("Failed to train any ANN model")
+        raise RuntimeError("Failed to train any DT model")
 
     dump(best_model, model_path)
-    print("\n✅ Best ANN model saved.")
-    print(f"   Layers: {best_config[0]}")
-    print(f"   Activation: {best_config[1]}")
-    print(f"   Learning rate: {best_config[2]}")
-    print(f"   MSE: {best_mse:.6f}")
+    print("\n✅ Best DT model saved.")
+    print(f"   Depth: {best_depth}")
+    print(f"   MSE:   {best_mse:.6f}")
 
     return best_model, best_mse
 
@@ -121,7 +108,7 @@ def add_bin_vector_columns(df, coverage_goals):
         df[label] = df["result"].isin(values).astype(int)
     return df
 
-def generate_ann_inputs(model, uncovered_labels):
+def generate_dt_inputs(model, uncovered_labels):
     input_batch = []
     for label in uncovered_labels:
         target_val = coverage_goals[label][0]
@@ -191,17 +178,17 @@ while True:
     uncovered = get_uncovered_bins(df, coverage_goals)
     covered = total_bins - len(uncovered)
 
-    sim_counts.append(total_sims)
-    coverage_progress.append(covered)
     print(f"[Random] Simulations run: {total_sims}, Covered bins: {covered}/{total_bins}")
 
     if len(df) < 5:
         print(f"Insufficient data in CSV for training (found {len(df)} rows, need at least 5).")
         continue
 
-    print("\n📊 Training ANN model...")
-    model, current_mse = train_ann(df, coverage_goals)
+    print("\n📊 Training DT model...")
+    model, current_mse = train_dt(df, coverage_goals)
     mse_progress.append(current_mse)
+    sim_counts.append(total_sims)
+    coverage_progress.append(covered)
 
     uncovered = get_uncovered_bins(df, coverage_goals)
     print(f"❗ Uncovered bins → {uncovered}")
@@ -209,7 +196,7 @@ while True:
         print("🎉 All coverage goals met!")
         break
 
-    input_batch = generate_ann_inputs(model, uncovered)
+    input_batch = generate_dt_inputs(model, uncovered)
     print(f"Simulating {len(input_batch)} predicted inputs...")
     run_cocotb_test(test_model, extra_env={"MODEL_INPUTS": json.dumps(input_batch)})
     clean_sim_data(csv_path, coverage_goals)
@@ -221,8 +208,8 @@ while True:
 
     sim_counts.append(total_sims)
     coverage_progress.append(covered)
-    print(f"[Model] Simulations run: {total_sims}, Covered bins: {covered}/{total_bins}")
 
+    print(f"[Model] Simulations run: {total_sims}, Covered bins: {covered}/{total_bins}")
     cycle += 1
 
 print("✅ Verification loop complete.")
@@ -253,13 +240,13 @@ expected_results = predicted_a ** 2
 plt.figure(figsize=(10, 6))
 plt.scatter(predicted_a, true_results, label="Model Predictions", color="blue", s=50)
 plt.plot(predicted_a, expected_results, label="Expected a²", linestyle="--", linewidth=2, color="orange")
-
 plt.xlabel("Predicted a")
 plt.ylabel("Coverage Goal Result (a²)")
-plt.title("ANN Prediction vs Coverage Goal")
+plt.title("DT Prediction vs Coverage Goal")
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
+plt.savefig("verification_data/dt_final_prediction.png")
 plt.show()
 
 # ──────────────────────────────────────────────
@@ -272,28 +259,33 @@ plt.ylabel("Covered Bins")
 plt.title("Coverage Progress vs Simulations")
 plt.grid(True)
 plt.tight_layout()
+plt.savefig("verification_data/dt_coverage.png")
 plt.show()
 
 # ──────────────────────────────────────────────
 #              Loss Plotting (MSE)
 # ──────────────────────────────────────────────
+idx_trim = np.argmax(np.array(mse_progress) > 0)
 plt.figure(figsize=(10, 6))
-plt.plot(sim_counts[:len(mse_progress)], mse_progress, marker='o')
+plt.plot(sim_counts[idx_trim:idx_trim + len(mse_progress[idx_trim:])],
+         mse_progress[idx_trim:], marker='o')
 plt.xlabel("Total Simulations Run")
 plt.ylabel("Model MSE (Loss)")
-plt.title("ANN Model Loss (MSE) vs Simulations")
+plt.title("DT Model Loss (MSE) vs Simulations")
 plt.grid(True)
 plt.tight_layout()
+plt.savefig("verification_data/dt_mse.png")
 plt.show()
 
 # ──────────────────────────────────────────────
 #         Save metrics for future reference
 # ──────────────────────────────────────────────
-print("📊 All metrics saved to verification_data/ann_metrics.npz")
-np.savez("verification_data/ann_metrics.npz",
+np.savez("verification_data/dt_metrics.npz",
          sim_counts=np.array(sim_counts),
          coverage=np.array(coverage_progress),
          mse=np.array(mse_progress),
          predicted_a=predicted_a,
          true_results=true_results,
          expected_results=expected_results)
+
+print("📊 Metrics saved to verification_data/dt_metrics.npz")
