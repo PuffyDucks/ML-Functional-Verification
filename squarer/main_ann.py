@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.neural_network import MLPRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from joblib import dump, load
 from itertools import product
 
@@ -297,3 +297,60 @@ np.savez("verification_data/ann_metrics.npz",
          predicted_a=predicted_a,
          true_results=true_results,
          expected_results=expected_results)
+
+print("📊 Metrics saved to verification_data/dt_metrics.npz")
+
+# Compute final evaluation metrics
+mse_final = mean_squared_error(true_results, expected_results)
+rmse_final = np.sqrt(mse_final)
+mae_final = mean_absolute_error(true_results, expected_results)
+r2_final = r2_score(true_results, expected_results)
+
+# Extract model name from path
+model_name = os.path.splitext(os.path.basename(model_path))[0]
+
+# Create a DataFrame to store the predictions
+final_df = pd.DataFrame({
+    "coverage_label": list(coverage_goals.keys()),
+    "predicted_a": predicted_a,
+    "expected_result": expected_results,
+    "target_result": true_results,
+    "model_name": model_name
+})
+
+# Save prediction inputs
+metrics_summary = {
+    "model_name": model_name,
+    "Total Simulations": total_sims,
+    "MSE": mse_final,
+    "RMSE": rmse_final,
+    "MAE": mae_final,
+    "R2_Score": r2_final
+}
+
+# Save metrics summary to a master CSV
+summary_csv_path = "verification_data/poly_final_metrics.csv"
+
+# Load existing data if available
+if os.path.exists(summary_csv_path):
+    summary_df = pd.read_csv(summary_csv_path)
+    # Remove existing row for this model name
+    summary_df = summary_df[summary_df["model_name"] != model_name]
+else:
+    summary_df = pd.DataFrame()
+
+# Append new summary row
+summary_df = pd.concat([summary_df, pd.DataFrame([metrics_summary])], ignore_index=True)
+summary_df.to_csv(summary_csv_path, index=False)
+
+# Also save the detailed prediction inputs to a separate file
+predictions_csv_path = f"verification_data/{model_name}_predicted_inputs.csv"
+final_df.to_csv(predictions_csv_path, index=False)
+
+# Print final summary
+print("\n📈 Final Model Evaluation Metrics:")
+for k, v in metrics_summary.items():
+    if k != "model_name":
+        print(f"  {k}: {v:.6f}")
+print(f"\n📝 Summary saved to: {summary_csv_path}")
+print(f"🧾 Detailed predictions saved to: {predictions_csv_path}")
