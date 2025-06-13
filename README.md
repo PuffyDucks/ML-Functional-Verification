@@ -12,10 +12,9 @@ pip install numpy pandas scikit-learn joblib cocotb
 
 Make sure your Verilog design (e.g., `multiplier.v`) is placed in the repo. The top module should match `top_module` in the script (`multiplier` by default).
 
+### Configuration Options
 
-## Configuration Options
-
-Edit these in `ann_verification.py`:
+Edit these in `{model_name}_main.py`:
 
 | Parameter             | Purpose                                |
 | --------------------- | -------------------------------------- |
@@ -25,5 +24,18 @@ Edit these in `ann_verification.py`:
 | `initial_random_runs` | Number of initial random tests         |
 | `max_cycles`          | Max number of ANN feedback iterations  |
 | `input_ranges`        | Maximum values for input normalization |
+
+### Running a Model
+
+Enter the DUT's directory:
+
+```bash
+cd {path_to_project}/module_folder
+```
+
+Then, run the model:
+```bash
+python {model_name}_main.py
+```
 
 ---
